@@ -85,3 +85,74 @@ print(tokens)
 
 # Output:
 # [('FUNCTION', 'function'), ('LPAREN', '('), ('NUMBER', '2'), ('PLUS', '+'), ('NUMBER', '2'), ('RPAREN', ')'), ('SEMICOLON', ';'), ('EOF', None)]
+
+# -------------------------
+# AST NODES
+#
+# Abstract Syntax Tree
+# Is a structured representation of the code.
+# For example: function (2 + 2); can become:
+#
+# Function
+# └── Binary
+#     ├── Number(2)
+#     ├── PLUS
+#     └── Number(2)
+#
+# These classes define the different kinds of nodes that can appear inside that tree.
+# -------------------------
+
+# Create a Number node.
+# This represents a number in the source code.
+# For example: 2 becomes: Number(2)
+class Number:
+    # __init__ runs when a new Number object is created.
+    def __init__(self, value):
+        # Store the actual numeric value.
+        # Example: Number(2) - self.value will contain: 2
+        self.value = value
+
+# Create a Binary node.
+# "Binary" means an operation involving two sides.
+# For example: 2 + 2 has:
+# left: = 2
+# operator = +
+# right = 2
+# The AST representation becomes:
+#
+# Binary
+# ├── Number(2)
+# ├── PLUS
+# └── Number(2)
+class Binary:
+    # Create a new Binary node.
+    def __init__(self, left, operator, right):
+        # Store the expression on the left side. 
+        # For 2 + 3, this would represent: 2
+        self.left = left
+        # Store the operator.
+        # For 2 + 3, this would contain: "PLUS"
+        self.operator = operator
+        # Store the expression on the right side.
+        # For 2 + 3, this would represent: 3
+        self.right = right
+
+# Create a Function node.
+# This represents the language syntax: function (...)
+# For example: function (2 + 2), becomes:
+#
+# Function
+# └── Binary
+#     ├── Number(2)
+#     ├── PLUS
+#     └── Number(2)
+class Function:
+    # Create a new Function node.
+    def __init__(self, body):
+        # Store the expression inside the function.
+        # For: function (2 + 2), body will contain the AST for: 2 + 2
+        self.body = body
+
+# -------------------------
+# PARSER
+# -------------------------
