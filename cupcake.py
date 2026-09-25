@@ -1,5 +1,6 @@
 # Impprt the regular expression module from Python.
 import re
+import sys
 
 TOKEN_REGEX = re.compile(
     r"""
@@ -381,3 +382,31 @@ print(run("function (2 + 2);"))
 print(run("function (10 - 3);"))
 print(run("function (4 * 5);"))
 print(run("function (20 / 4);"))
+
+# -------------------------
+# RUN EXTERNAL SOURCE FILES 
+# Run an external source file with the file extension of: .cake
+# -------------------------
+
+# Make sure the user provided the filename.
+if len(sys.argv) != 2:
+    print("Usage: python3 cupcake.py <file.cake>")
+    sys.exit(1)
+
+# Get the filename from the command line.
+filename = sys.argv[1]
+
+# Make sure the file uses the .cake extension.
+if not filename.endswith(".cake"):
+    print("Error: Cupcake source files must use the .cake extension.")
+    sys.exit(1)
+
+# Open the .cake file and read all of its source code.
+with open(filename, "r") as file:
+    source = file.read()
+
+# Send the source code through the interpreter.
+result = run(source)
+
+# Print the result.
+print(result)
