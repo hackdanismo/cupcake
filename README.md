@@ -118,3 +118,47 @@ In the `parser`, `parse()` starts the process, `parse_function()` recognizes the
 
 ## Evaluator
 An `evaluator` is the part of your interpreter that takes the `parsed` syntax tree and actually performs the computation.
+
+## Running the Interpreter
+Use `Python` to run the `Interpreter`. The file structure should be:
+
+```
+project/
+    cupcake.py
+    test.cake
+```
+
+Run the `test.cake` file:
+
+```shell
+$ python3 cupcake.py test.cake
+```
+
+## Syntax
+
+### Comments
+Code comments can be added as single-line comments or as block comments.
+
+```
+# Single-line comments
+
+##
+Block comments
+over multiple lines
+##
+```
+
+### Functions
+`Anonymous` functions that do not have names are executed immediately when the program runs.
+
+```
+function (2 + 2);
+```
+
+A function can be called when it has a name:
+
+```
+function add (2 + 2);
+
+add();
+```
