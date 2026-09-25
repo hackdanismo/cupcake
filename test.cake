@@ -1,8 +1,30 @@
-# Run the code with the terminal command: $ python3 cupcake.py test.cake
-# Functions without names, anonymous, are executed automatically.
-function (10 + 20);
+# Variables
+let name = "Cake";
+let count = 0;
 
-# Functions with names have to be called
-function add (2 + 2);
+# A function with parameters
+function greet(person) {
+    return "Hello " + person;
+}
 
-add();
+# Arrays
+let numbers = [10, 20, 30];
+append(numbers, 40);
+
+# Maps
+let language = {
+    name: "Cake",
+    version: 1
+};
+
+# Loop
+while (count < 3) {
+    count = count + 1;
+}
+
+# Conditional
+if (count == 3) {
+    print(greet(name));
+} else {
+    print("Something went wrong");
+}

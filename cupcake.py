@@ -2,702 +2,1043 @@
 import re
 import sys
 
+
+# -------------------------
+# TOKENS
+# -------------------------
+
 TOKEN_REGEX = re.compile(
     r"""
-    # Match the exact word "function".
-    # Prevent words such as "functionality" being used and being mistaken for the "function" keyword.
-    (?P<FUNCTION>function\b)
-    # Add an identifier so a function can be named
+    (?P<NUMBER>\d+(?:\.\d+)?)
+    |(?P<STRING>"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')
+    |(?P<FUNCTION>function\b)
+    |(?P<RETURN>return\b)
+    |(?P<LET>let\b)
+    |(?P<IF>if\b)
+    |(?P<ELSE>else\b)
+    |(?P<WHILE>while\b)
+    |(?P<TRY>try\b)
+    |(?P<CATCH>catch\b)
+    |(?P<TRUE>true\b)
+    |(?P<FALSE>false\b)
+    |(?P<AND>and\b)
+    |(?P<OR>or\b)
+    |(?P<NOT>not\b)
     |(?P<IDENTIFIER>[A-Za-z_][A-Za-z0-9_]*)
-    # Match the + operator, escaped using \+ because + has a special meaning in regex.
+    |(?P<EQ>==)
+    |(?P<NE>!=)
+    |(?P<LE><=)
+    |(?P<GE>>=)
+    |(?P<ASSIGN>=)
+    |(?P<LT><)
+    |(?P<GT>>)
     |(?P<PLUS>\+)
-    # Match the - operator.
     |(?P<MINUS>-)
-    # Match the * operator, escaped using \* because * has a special meaning in regex.
     |(?P<STAR>\*)
-    # Match the / operator.
     |(?P<SLASH>/)
-    # Match an opening parenthesis, escaped using \( because ( has a special meaning in regex.
+    |(?P<PERCENT>%)
     |(?P<LPAREN>\()
-    # Match a closing parenthesis.
     |(?P<RPAREN>\))
-    # Match a semicolon.
+    |(?P<LBRACE>\{)
+    |(?P<RBRACE>\})
+    |(?P<LBRACKET>\[)
+    |(?P<RBRACKET>\])
+    |(?P<COMMA>,)
+    |(?P<COLON>:)
     |(?P<SEMICOLON>;)
-    # Allow numbers including decimal points to give this pattern a token name NUMBER.
-    |(?P<NUMBER>\d+(?:\.\d+)?)
-    # Match whitespace, \s means a whitespace character, + means one or more.
-    # This includes: spaces, tabs and new lines.
     |(?P<WHITESPACE>\s+)
     """,
-
-    # Allows us to write regular expressions over multiple lines including comments and whitespace.
     re.VERBOSE,
 )
 
 
-# Define a function called tokenize. It accepts source code as a string.
 def tokenize(source):
-
-    # Create an empty list where each token will be added that is discovered.
     tokens = []
-
-    # Start reading the source code at character position 0.
-    # In a function, character position 0 would be: "f" in "function (2 + 2);".
     position = 0
 
-    # Keep looping whilst there are characters in the source code left to examine
-    # Whilst position is less than the total source length.
     while position < len(source):
-
-        # Check whether the current position starts a block comment.
-        #
-        # Block comments start with:
-        #
-        # ##
-        #
-        # and finish with:
-        #
-        # ##
+        # Block comments use ## ... ##
         if source.startswith("##", position):
-
-            # Look for the closing ##.
-            #
-            # Start searching after the opening ## so we do not
-            # immediately match the opening characters themselves.
             end_position = source.find("##", position + 2)
-
-            # If another ## cannot be found,
-            # the block comment was never closed.
             if end_position == -1:
-
-                raise SyntaxError(
-                    "Block comment was not closed with ##"
-                )
-
-            # Move the tokenizer past the closing ##.
-            #
-            # +2 is needed because ## contains two characters.
+                raise SyntaxError("Block comment was not closed with ##")
             position = end_position + 2
-
-            # Continue with the next character in the source code.
             continue
 
-
-        # Check whether the current character starts a single-line comment.
-        #
-        # Single-line comments start with:
-        #
-        # #
+        # Single-line comments use # ... end-of-line
         if source[position] == "#":
-
-            # Look for the next newline.
-            #
-            # Everything from # until the newline is ignored.
             end_position = source.find("\n", position)
-
-            # If there is no newline,
-            # the comment continues until the end of the file.
             if end_position == -1:
-
                 position = len(source)
-
             else:
-
-                # Move past the newline so tokenization
-                # continues on the next line.
                 position = end_position + 1
-
-            # Continue with the next character in the source code.
             continue
 
-
-        # Try to match one of the token patterns starting at the current character position.
-        # TOKEN_REGEX contains all of the patterns defined above.
         match = TOKEN_REGEX.match(source, position)
 
-        # If nothing matches, the language does not recognise the character at the current position, run this:
         if not match:
-
-            # Stop the program and report a syntax error.
             raise SyntaxError(
-                f"Unexpected character: {source[position]}"
+                f"Unexpected character at position {position}: {source[position]!r}"
             )
 
-        # Find out which named regex group matched e.g. "function" -> FUNCTION, "2" -> NUMBER
         token_type = match.lastgroup
-
-        # Get the actual text that was matched e.g. token_type = "NUMBER" value = "2"
         value = match.group()
 
-        # Whitespace not normally needed after tokenization.
-        # Only add a token if it is NOT whitespace.
         if token_type != "WHITESPACE":
-
-            # Add a tuple containing:
-            # 1. The token type
-            # 2. The original text
-            # Example: ("NUMBER", "2")
             tokens.append((token_type, value))
 
-        # Move the current position forward to the end of the text that was just matched.
         position = match.end()
 
-    # Once all the source code has been read, add a special EOF (End of File) token.
-    # This tells the parser that there are no more tokens.
     tokens.append(("EOF", None))
-
-    # Return the complete list of tokens.
     return tokens
 
 
 # -------------------------
 # AST NODES
-#
-# Abstract Syntax Tree
-# Is a structured representation of the code.
-# For example: function (2 + 2); can become:
-#
-# Function
-# └── Binary
-#     ├── Number(2)
-#     ├── PLUS
-#     └── Number(2)
-#
-# These classes define the different kinds of nodes that can appear inside that tree.
 # -------------------------
 
-
-# Create a Number node.
-# This represents a number in the source code.
-# For example: 2 becomes: Number(2)
-class Number:
-
-    # __init__ runs when a new Number object is created.
-    def __init__(self, value):
-
-        # Store the actual numeric value.
-        # Example: Number(2) - self.value will contain: 2
-        self.value = value
-
-
-# Create a Binary node.
-# "Binary" means an operation involving two sides.
-# For example: 2 + 2 has:
-# left: = 2
-# operator = +
-# right = 2
-# The AST representation becomes:
-#
-# Binary
-# ├── Number(2)
-# ├── PLUS
-# └── Number(2)
-class Binary:
-
-    # Create a new Binary node.
-    def __init__(self, left, operator, right):
-
-        # Store the expression on the left side.
-        # For 2 + 3, this would represent: 2
-        self.left = left
-
-        # Store the operator.
-        # For 2 + 3, this would contain: "PLUS"
-        self.operator = operator
-
-        # Store the expression on the right side.
-        # For 2 + 3, this would represent: 3
-        self.right = right
-
-
-# Create a Function node.
-# This represents the language syntax: function (...)
-# For example: function (2 + 2), becomes:
-#
-# Function
-# └── Binary
-#     ├── Number(2)
-#     ├── PLUS
-#     └── Number(2)
-class Function:
-
-    # Create a new Function node.
-    def __init__(self, name, body):
-
-        # Store the expression inside the function.
-        # For: function (2 + 2), body will contain the AST for: 2 + 2
-        self.name = name
-        self.body = body
-
-
-class Call:
-
-    def __init__(self, name):
-        self.name = name
-
-
-# A Program node represents all of the statements inside a .cake file.
-#
-# For example:
-#
-# function add (2 + 2);
-# add();
-#
-# contains two statements.
 class Program:
-
     def __init__(self, statements):
         self.statements = statements
 
 
+class Block:
+    def __init__(self, statements):
+        self.statements = statements
+
+
+class Number:
+    def __init__(self, value):
+        self.value = value
+
+
+class String:
+    def __init__(self, value):
+        self.value = value
+
+
+class Boolean:
+    def __init__(self, value):
+        self.value = value
+
+
+class Array:
+    def __init__(self, elements):
+        self.elements = elements
+
+
+class Map:
+    def __init__(self, entries):
+        self.entries = entries
+
+
+class Variable:
+    def __init__(self, name):
+        self.name = name
+
+
+class Let:
+    def __init__(self, name, value):
+        self.name = name
+        self.value = value
+
+
+class Assign:
+    def __init__(self, target, value):
+        self.target = target
+        self.value = value
+
+
+class Binary:
+    def __init__(self, left, operator, right):
+        self.left = left
+        self.operator = operator
+        self.right = right
+
+
+class Unary:
+    def __init__(self, operator, expression):
+        self.operator = operator
+        self.expression = expression
+
+
+class If:
+    def __init__(self, condition, then_branch, else_branch):
+        self.condition = condition
+        self.then_branch = then_branch
+        self.else_branch = else_branch
+
+
+class While:
+    def __init__(self, condition, body):
+        self.condition = condition
+        self.body = body
+
+
+class TryCatch:
+    def __init__(self, try_block, error_name, catch_block):
+        self.try_block = try_block
+        self.error_name = error_name
+        self.catch_block = catch_block
+
+
+class Function:
+    def __init__(self, name, parameters, body, legacy_expression=False):
+        self.name = name
+        self.parameters = parameters
+        self.body = body
+        self.legacy_expression = legacy_expression
+        self.closure = None
+
+
+class Call:
+    def __init__(self, callee, arguments):
+        self.callee = callee
+        self.arguments = arguments
+
+
+class Return:
+    def __init__(self, value):
+        self.value = value
+
+
+class Index:
+    def __init__(self, target, index):
+        self.target = target
+        self.index = index
+
+
+class ExpressionStatement:
+    def __init__(self, expression):
+        self.expression = expression
+
+
 # -------------------------
 # PARSER
-#
-# The parser receives the tokens produced by the tokenizer.
-# The tokens are then turned into the AST defined above.
-#
-# For example:
-#
-# Tokenizer output:
-#
-# FUNCTION
-# LPAREN
-# NUMBER
-# PLUS
-# NUMBER
-# RPAREN
-# SEMICOLON
-# EOF
-#
-# becomes:
-#
-# Function
-# └── Binary
-#     ├── Number(2)
-#     ├── PLUS
-#     └── Number(2)
 # -------------------------
-
 
 class Parser:
-
-    # Create a parser.
-    # Tokens shoukd be in the list produced by tokenize().
     def __init__(self, tokens):
-
-        # Store the complete token list.
         self.tokens = tokens
-
-        # Start reading at the first token.
-        # Position 0 means: tokens[0].
         self.position = 0
 
-
-    # Return the token the parser is currently looking at.
     def current(self):
-
-        # Use self.position as the index into the token list.
         return self.tokens[self.position]
 
+    def previous(self):
+        return self.tokens[self.position - 1]
 
-    # Require a specific token type.
-    # For example: self.expect("FUNCTION") means: "The next token must be FUNCTION.".
+    def check(self, token_type):
+        return self.current()[0] == token_type
+
+    def check_next(self, token_type):
+        if self.position + 1 >= len(self.tokens):
+            return False
+        return self.tokens[self.position + 1][0] == token_type
+
+    def match(self, *token_types):
+        if self.current()[0] in token_types:
+            token = self.current()
+            self.position += 1
+            return token
+        return None
+
     def expect(self, token_type):
-
-        # Get the current token.
-        token = self.current()
-
-        # A token looks something like: ("NUMBER", "2")
-        # token[0] is the token type: "NUMBER".
-        # token[1] is its original text: "2".
-        # Check whether the current token has the expected type.
-        if token[0] != token_type:
-
-            # If it does not match, stop parsing and report an error.
-            # Example: Expected RPAREN, got NUMBER
-            raise SyntaxError(
-                f"Expected {token_type}, got {token[0]}"
-            )
-
-        # Move forward to the next token.
-        self.position += 1
-
-        # Return the token that was successfully consumed.
+        token = self.match(token_type)
+        if token is None:
+            actual = self.current()[0]
+            raise SyntaxError(f"Expected {token_type}, got {actual}")
         return token
 
-
-    # Parse the entire program.
     def parse(self):
-
-        # At the moment, the language expects the program to contain exactly one function.
-        # So begin by parsing that function.
-
-        # The parser now supports multiple statements in one .cake file.
         statements = []
-
-        # Keep parsing until EOF is reached.
-        while self.current()[0] != "EOF":
-
-            # If the current statement starts with FUNCTION,
-            # parse either a named or anonymous function.
-            if self.current()[0] == "FUNCTION":
-
-                function = self.parse_function()
-
-                statements.append(function)
-
-            # If the current statement starts with an IDENTIFIER,
-            # treat it as a named function call.
-            elif self.current()[0] == "IDENTIFIER":
-
-                call = self.parse_call()
-
-                statements.append(call)
-
-            # Anything else is currently invalid syntax.
-            else:
-
-                raise SyntaxError(
-                    f"Unexpected token: {self.current()[0]}"
-                )
-
-            # After the function, require the semicolon to be added to the end.
-            # Example: function (2 + 2);
-            self.expect("SEMICOLON")
-
-        # Then, require the EOF token.
-        # This makes sure that there is nothing unexpected after the program.
+        while not self.check("EOF"):
+            statements.append(self.parse_statement())
         self.expect("EOF")
-
-        # Return the complete AST.
         return Program(statements)
 
+    def parse_statement(self):
+        if self.check("FUNCTION"):
+            function = self.parse_function()
 
-    # Parse a function expression.
-    # Expected syntax: function (...)
+            # Legacy expression-body functions use a trailing semicolon.
+            if function.legacy_expression:
+                self.expect("SEMICOLON")
+
+            # A block-style function may optionally use a semicolon.
+            else:
+                self.match("SEMICOLON")
+
+            return function
+
+        if self.match("LET"):
+            statement = self.parse_let()
+            self.expect("SEMICOLON")
+            return statement
+
+        if self.match("RETURN"):
+            statement = self.parse_return()
+            self.expect("SEMICOLON")
+            return statement
+
+        if self.match("IF"):
+            return self.parse_if()
+
+        if self.match("WHILE"):
+            return self.parse_while()
+
+        if self.match("TRY"):
+            return self.parse_try_catch()
+
+        expression = self.parse_expression()
+
+        if self.match("ASSIGN"):
+            value = self.parse_expression()
+            self.expect("SEMICOLON")
+
+            if not isinstance(expression, (Variable, Index)):
+                raise SyntaxError("Invalid assignment target")
+
+            return Assign(expression, value)
+
+        self.expect("SEMICOLON")
+        return ExpressionStatement(expression)
+
+    def parse_block(self):
+        self.expect("LBRACE")
+        statements = []
+
+        while not self.check("RBRACE"):
+            if self.check("EOF"):
+                raise SyntaxError("Expected RBRACE before end of file")
+            statements.append(self.parse_statement())
+
+        self.expect("RBRACE")
+        return Block(statements)
+
+    def parse_let(self):
+        name = self.expect("IDENTIFIER")[1]
+        self.expect("ASSIGN")
+        value = self.parse_expression()
+        return Let(name, value)
+
+    def parse_return(self):
+        if self.check("SEMICOLON"):
+            return Return(None)
+        return Return(self.parse_expression())
+
+    def parse_if(self):
+        self.expect("LPAREN")
+        condition = self.parse_expression()
+        self.expect("RPAREN")
+        then_branch = self.parse_block()
+
+        else_branch = None
+        if self.match("ELSE"):
+            if self.match("IF"):
+                else_branch = self.parse_if()
+            else:
+                else_branch = self.parse_block()
+
+        return If(condition, then_branch, else_branch)
+
+    def parse_while(self):
+        self.expect("LPAREN")
+        condition = self.parse_expression()
+        self.expect("RPAREN")
+        body = self.parse_block()
+        return While(condition, body)
+
+    def parse_try_catch(self):
+        try_block = self.parse_block()
+
+        self.expect("CATCH")
+        self.expect("LPAREN")
+        error_name = self.expect("IDENTIFIER")[1]
+        self.expect("RPAREN")
+
+        catch_block = self.parse_block()
+
+        return TryCatch(try_block, error_name, catch_block)
+
     def parse_function(self):
-
-        # The first token must be: FUNCTION
-        # This comes from the word: function
-        # Require the "function" keyword.
         self.expect("FUNCTION")
 
-        # Require a function name.
-
-        # A name is optional.
-        #
-        # Named:
-        #
-        # function add (2 + 2);
-        #
-        # Anonymous:
-        #
-        # function (2 + 2);
         name = None
 
-        if self.current()[0] == "IDENTIFIER":
-
-            name_token = self.expect("IDENTIFIER")
-
-            # Get the actual name.
-            name = name_token[1]
-
-        # The next token must be: (
-        self.expect("LPAREN")
-
-        # Parse the expression inside the parenthesis.
-        # For: function (2 + 2) this parses: 2 + 2
-        body = self.parse_expression()
-
-        # Require the closing )
-        self.expect("RPAREN")
-
-        # Create and return a Function node.
-        # If body represents: 2 + 2, the result becomes:
-        # Function
-        # └── Binary(...)
-        return Function(name, body)
-
-
-    # Parse a named function call.
-    #
-    # Example:
-    #
-    # add();
-    def parse_call(self):
-
-        # Get the function name.
-        name_token = self.expect("IDENTIFIER")
-
-        name = name_token[1]
-
-        # Require opening parenthesis.
-        self.expect("LPAREN")
-
-        # Require closing parenthesis.
-        self.expect("RPAREN")
-
-        # Return a Call AST node.
-        return Call(name)
-
-
-    # Parse an artithmetic expression.
-    # For now, this parser supports simple expressions such as: 2 + 2 or 10 - 5
-    # If does NOT yet support longer expressions, such as: 2 + 3 * 4
-    # Proper operator precedence will require a slighly more advanced parser.
-    def parse_expression(self):
-
-        # Parse the first number
-        left = self.parse_number()
-
-        # Look at the next token's type.
-        # For 2 + 2 the current token is: ("PLUS", "+"), so operator becomes: "PLUS"
-        operator = self.current()[0]
-
-        # Check whether the next token is one of the operators the language understands.
-        if operator in ("PLUS", "MINUS", "STAR", "SLASH"):
-
-            # Move past the operator token.
-            # This is done manually here because we know which operator it is.
-            self.position += 1
-
-            # Parse the number on the right-hand side.
-            right = self.parse_number()
-
-            # Create a Binary node representing the expression.
-            return Binary(left, operator, right)
-
-        # If there was no operator after the first number, then the expression is just that number.
-        return left
-
-
-    # Parse a NUMBER token.
-    def parse_number(self):
-
-        # Reuire the current token to be NUMBER
-        # For example: ("NUMBER", "2")
-        token = self.expect("NUMBER")
-
-        # Get the original text of the number.
-        # For: ("NUMBER", "2") token[1] is: "2"
-        value = token[1]
-
-        # The tokenizer gives us text, so we need to convert it into an actual Python number.
-
-        # If the number contains a decimal point...
-        if "." in value:
-
-            # Convert it into a floating-point number.
-            # Example: "2.5" becomes: 2.5
-            return Number(float(value))
-
-        # Otherwise convert it into an integer.
-        # Example: "2" becomes: 2
-        return Number(int(value))
-
-
-# -------------------------
-# EVALUATOR
-# An evaluator is the part of your interpreter that takes the parsed syntax tree and actually performs the computation.
-# -------------------------
-
-
-# Store named functions here.
-#
-# Example:
-#
-# functions["add"]
-#
-# can contain the Function node for:
-#
-# function add (2 + 2);
-functions = {}
-
-
-def evaluate(node):
-
-    # If the node is a Number, return the actual numerical value.
-    if isinstance(node, Number):
-        return node.value
-
-
-    # If the node is a Binary expression, evaluate the left and right sides.
-    if isinstance(node, Binary):
-
-        left = evaluate(node.left)
-        right = evaluate(node.right)
-
-        # Perform the correct operation.
-        if node.operator == "PLUS":
-            return left + right
-
-        if node.operator == "MINUS":
-            return left - right
-
-        if node.operator == "STAR":
-            return left * right
-
-        if node.operator == "SLASH":
-            return left / right
-
-
-    # If the node is a Function, evaluate the function body
-    # Execute function node immediately if anonymous (function has no name)
-    if isinstance(node, Function):
-
-        # If the function has no name, run it immediately.
+        # A named function has an identifier before its opening parenthesis:
         #
-        # Example:
+        # function add(a, b) { ... }
+        #
+        # An anonymous function begins directly with "(":
+        #
+        # function(a, b) { ... }
+        if self.check("IDENTIFIER") and self.check_next("LPAREN"):
+            name = self.expect("IDENTIFIER")[1]
+
+        self.expect("LPAREN")
+
+        # Cake supports both the original expression-body syntax:
         #
         # function (2 + 2);
-        #
-        # returns 4.
-        if node.name is None:
-            return evaluate(node.body)
-
-        # If the function has a name, store it instead of running it.
-        #
-        # Example:
-        #
         # function add (2 + 2);
         #
-        # is stored under:
+        # and the newer block-body syntax:
         #
-        # functions["add"]
-        functions[node.name] = node
+        # function add(a, b) { return a + b; }
+        #
+        # To tell them apart, first look ahead to see whether the contents
+        # of (...) form a parameter list AND are immediately followed by {.
+        saved_position = self.position
+        parameters = []
+        parameter_list_is_valid = True
+
+        if not self.check("RPAREN"):
+            if not self.check("IDENTIFIER"):
+                parameter_list_is_valid = False
+            else:
+                parameters.append(self.expect("IDENTIFIER")[1])
+
+                while self.match("COMMA"):
+                    if not self.check("IDENTIFIER"):
+                        parameter_list_is_valid = False
+                        break
+                    parameters.append(self.expect("IDENTIFIER")[1])
+
+        if parameter_list_is_valid and self.check("RPAREN"):
+            self.position += 1
+
+            if self.check("LBRACE"):
+                body = self.parse_block()
+                return Function(name, parameters, body, legacy_expression=False)
+
+        # It was not a parameter-list + block function, so rewind and parse
+        # everything inside (...) as the original Cake expression body.
+        self.position = saved_position
+        body = self.parse_expression()
+        self.expect("RPAREN")
+        return Function(name, [], body, legacy_expression=True)
+
+    def parse_expression(self):
+        return self.parse_or()
+
+    def parse_or(self):
+        expression = self.parse_and()
+        while self.match("OR"):
+            expression = Binary(expression, "OR", self.parse_and())
+        return expression
+
+    def parse_and(self):
+        expression = self.parse_equality()
+        while self.match("AND"):
+            expression = Binary(expression, "AND", self.parse_equality())
+        return expression
+
+    def parse_equality(self):
+        expression = self.parse_comparison()
+
+        while self.current()[0] in ("EQ", "NE"):
+            operator = self.current()[0]
+            self.position += 1
+            expression = Binary(expression, operator, self.parse_comparison())
+
+        return expression
+
+    def parse_comparison(self):
+        expression = self.parse_addition()
+
+        while self.current()[0] in ("LT", "LE", "GT", "GE"):
+            operator = self.current()[0]
+            self.position += 1
+            expression = Binary(expression, operator, self.parse_addition())
+
+        return expression
+
+    def parse_addition(self):
+        expression = self.parse_multiplication()
+
+        while self.current()[0] in ("PLUS", "MINUS"):
+            operator = self.current()[0]
+            self.position += 1
+            expression = Binary(expression, operator, self.parse_multiplication())
+
+        return expression
+
+    def parse_multiplication(self):
+        expression = self.parse_unary()
+
+        while self.current()[0] in ("STAR", "SLASH", "PERCENT"):
+            operator = self.current()[0]
+            self.position += 1
+            expression = Binary(expression, operator, self.parse_unary())
+
+        return expression
+
+    def parse_unary(self):
+        if self.current()[0] in ("MINUS", "NOT"):
+            operator = self.current()[0]
+            self.position += 1
+            return Unary(operator, self.parse_unary())
+
+        return self.parse_postfix()
+
+    def parse_postfix(self):
+        expression = self.parse_primary()
+
+        while True:
+            if self.match("LPAREN"):
+                arguments = []
+
+                if not self.check("RPAREN"):
+                    arguments.append(self.parse_expression())
+                    while self.match("COMMA"):
+                        arguments.append(self.parse_expression())
+
+                self.expect("RPAREN")
+                expression = Call(expression, arguments)
+                continue
+
+            if self.match("LBRACKET"):
+                index = self.parse_expression()
+                self.expect("RBRACKET")
+                expression = Index(expression, index)
+                continue
+
+            break
+
+        return expression
+
+    def parse_primary(self):
+        token_type, value = self.current()
+
+        if token_type == "NUMBER":
+            self.position += 1
+            if "." in value:
+                return Number(float(value))
+            return Number(int(value))
+
+        if token_type == "STRING":
+            self.position += 1
+            # Decode common escaped characters such as \n and \".
+            decoded = bytes(value[1:-1], "utf-8").decode("unicode_escape")
+            return String(decoded)
+
+        if token_type == "TRUE":
+            self.position += 1
+            return Boolean(True)
+
+        if token_type == "FALSE":
+            self.position += 1
+            return Boolean(False)
+
+        if token_type == "IDENTIFIER":
+            self.position += 1
+            return Variable(value)
+
+        if token_type == "FUNCTION":
+            # Anonymous modern function expression.
+            return self.parse_function()
+
+        if token_type == "LPAREN":
+            self.position += 1
+            expression = self.parse_expression()
+            self.expect("RPAREN")
+            return expression
+
+        if token_type == "LBRACKET":
+            return self.parse_array()
+
+        if token_type == "LBRACE":
+            return self.parse_map()
+
+        raise SyntaxError(f"Unexpected token: {token_type}")
+
+    def parse_array(self):
+        self.expect("LBRACKET")
+        elements = []
+
+        if not self.check("RBRACKET"):
+            elements.append(self.parse_expression())
+            while self.match("COMMA"):
+                elements.append(self.parse_expression())
+
+        self.expect("RBRACKET")
+        return Array(elements)
+
+    def parse_map(self):
+        self.expect("LBRACE")
+        entries = []
+
+        if not self.check("RBRACE"):
+            while True:
+                if self.check("STRING"):
+                    key = self.parse_primary()
+                elif self.check("IDENTIFIER"):
+                    key = String(self.expect("IDENTIFIER")[1])
+                else:
+                    raise SyntaxError("Map keys must be strings or identifiers")
+
+                self.expect("COLON")
+                value = self.parse_expression()
+                entries.append((key, value))
+
+                if not self.match("COMMA"):
+                    break
+
+        self.expect("RBRACE")
+        return Map(entries)
+
+
+# -------------------------
+# RUNTIME
+# -------------------------
+
+class CakeRuntimeError(Exception):
+    pass
+
+
+class ReturnSignal(Exception):
+    def __init__(self, value):
+        self.value = value
+
+
+class Environment:
+    def __init__(self, parent=None):
+        self.parent = parent
+        self.values = {}
+
+    def define(self, name, value):
+        self.values[name] = value
+
+    def get(self, name):
+        if name in self.values:
+            return self.values[name]
+
+        if self.parent is not None:
+            return self.parent.get(name)
+
+        raise CakeRuntimeError(f"Variable '{name}' is not defined")
+
+    def assign(self, name, value):
+        if name in self.values:
+            self.values[name] = value
+            return value
+
+        if self.parent is not None:
+            return self.parent.assign(name, value)
+
+        raise CakeRuntimeError(f"Variable '{name}' is not defined")
+
+
+class CakeFunction:
+    def __init__(self, declaration, closure):
+        self.declaration = declaration
+        self.closure = closure
+
+    def call(self, interpreter, arguments):
+        if len(arguments) != len(self.declaration.parameters):
+            raise CakeRuntimeError(
+                f"Function '{self.declaration.name or '<anonymous>'}' expected "
+                f"{len(self.declaration.parameters)} argument(s), got {len(arguments)}"
+            )
+
+        environment = Environment(self.closure)
+
+        for name, value in zip(self.declaration.parameters, arguments):
+            environment.define(name, value)
+
+        try:
+            if self.declaration.legacy_expression:
+                return interpreter.evaluate(self.declaration.body, environment)
+
+            interpreter.evaluate(self.declaration.body, environment)
+
+        except ReturnSignal as signal:
+            return signal.value
 
         return None
 
 
-    # If the node is a function Call, find the stored function.
-    if isinstance(node, Call):
+class BuiltinFunction:
+    def __init__(self, name, function, arity=None):
+        self.name = name
+        self.function = function
+        self.arity = arity
 
-        # Make sure the function exists.
-        if node.name not in functions:
-
-            raise RuntimeError(
-                f"Function '{node.name}' is not defined"
+    def call(self, interpreter, arguments):
+        if self.arity is not None and len(arguments) != self.arity:
+            raise CakeRuntimeError(
+                f"{self.name} expected {self.arity} argument(s), got {len(arguments)}"
             )
 
-        # Get the stored Function node.
-        function = functions[node.name]
+        try:
+            return self.function(*arguments)
+        except CakeRuntimeError:
+            raise
+        except Exception as error:
+            raise CakeRuntimeError(f"{self.name}: {error}") from error
 
-        # Execute the function body.
-        return evaluate(function.body)
 
+class Interpreter:
+    def __init__(self):
+        self.globals = Environment()
+        self.install_builtins()
 
-    # If the node represents the whole program,
-    # evaluate each statement in order.
-    if isinstance(node, Program):
+    def install_builtins(self):
+        self.globals.define("print", BuiltinFunction("print", self.builtin_print))
+        self.globals.define("length", BuiltinFunction("length", self.builtin_length, 1))
+        self.globals.define("charAt", BuiltinFunction("charAt", self.builtin_char_at, 2))
+        self.globals.define("substring", BuiltinFunction("substring", self.builtin_substring, 3))
+        self.globals.define("readFile", BuiltinFunction("readFile", self.builtin_read_file, 1))
+        self.globals.define("append", BuiltinFunction("append", self.builtin_append, 2))
+        self.globals.define("keys", BuiltinFunction("keys", self.builtin_keys, 1))
+        self.globals.define("typeOf", BuiltinFunction("typeOf", self.builtin_type_of, 1))
+        self.globals.define("toString", BuiltinFunction("toString", self.builtin_to_string, 1))
+        self.globals.define("toNumber", BuiltinFunction("toNumber", self.builtin_to_number, 1))
+        self.globals.define("error", BuiltinFunction("error", self.builtin_error, 1))
 
-        result = None
+    def builtin_print(self, *values):
+        print(*[self.stringify(value) for value in values])
+        return None
 
-        for statement in node.statements:
+    def builtin_length(self, value):
+        if not isinstance(value, (str, list, dict)):
+            raise CakeRuntimeError("length expects a string, array, or map")
+        return len(value)
 
-            value = evaluate(statement)
+    def builtin_char_at(self, value, index):
+        if not isinstance(value, str):
+            raise CakeRuntimeError("charAt expects a string")
+        if not isinstance(index, int):
+            raise CakeRuntimeError("charAt index must be an integer")
+        try:
+            return value[index]
+        except IndexError:
+            raise CakeRuntimeError("charAt index is out of range")
 
-            # Keep the latest result produced by either:
+    def builtin_substring(self, value, start, end):
+        if not isinstance(value, str):
+            raise CakeRuntimeError("substring expects a string")
+        if not isinstance(start, int) or not isinstance(end, int):
+            raise CakeRuntimeError("substring indexes must be integers")
+        return value[start:end]
+
+    def builtin_read_file(self, filename):
+        if not isinstance(filename, str):
+            raise CakeRuntimeError("readFile expects a string filename")
+        try:
+            with open(filename, "r", encoding="utf-8") as file:
+                return file.read()
+        except OSError as error:
+            raise CakeRuntimeError(f"Could not read file '{filename}': {error}")
+
+    def builtin_append(self, array, value):
+        if not isinstance(array, list):
+            raise CakeRuntimeError("append expects an array as its first argument")
+        array.append(value)
+        return array
+
+    def builtin_keys(self, mapping):
+        if not isinstance(mapping, dict):
+            raise CakeRuntimeError("keys expects a map")
+        return list(mapping.keys())
+
+    def builtin_type_of(self, value):
+        if value is None:
+            return "null"
+        if isinstance(value, bool):
+            return "boolean"
+        if isinstance(value, (int, float)):
+            return "number"
+        if isinstance(value, str):
+            return "string"
+        if isinstance(value, list):
+            return "array"
+        if isinstance(value, dict):
+            return "map"
+        if isinstance(value, (CakeFunction, BuiltinFunction)):
+            return "function"
+        return type(value).__name__
+
+    def builtin_to_string(self, value):
+        return self.stringify(value)
+
+    def builtin_to_number(self, value):
+        if isinstance(value, bool):
+            return 1 if value else 0
+        if isinstance(value, (int, float)):
+            return value
+        if isinstance(value, str):
+            try:
+                number = float(value)
+                return int(number) if number.is_integer() else number
+            except ValueError:
+                raise CakeRuntimeError(f"Cannot convert {value!r} to a number")
+        raise CakeRuntimeError("toNumber expects a string, number, or boolean")
+
+    def builtin_error(self, message):
+        raise CakeRuntimeError(str(message))
+
+    def stringify(self, value):
+        if value is True:
+            return "true"
+        if value is False:
+            return "false"
+        if value is None:
+            return "null"
+        if isinstance(value, list):
+            return "[" + ", ".join(self.stringify(item) for item in value) + "]"
+        if isinstance(value, dict):
+            return "{" + ", ".join(
+                f"{self.stringify(key)}: {self.stringify(item)}"
+                for key, item in value.items()
+            ) + "}"
+        return str(value)
+
+    def is_truthy(self, value):
+        return bool(value)
+
+    def evaluate(self, node, environment=None):
+        if environment is None:
+            environment = self.globals
+
+        if isinstance(node, Program):
+            result = None
+            for statement in node.statements:
+                value = self.evaluate(statement, environment)
+                if value is not None:
+                    result = value
+            return result
+
+        if isinstance(node, Block):
+            result = None
+            for statement in node.statements:
+                value = self.evaluate(statement, environment)
+                if value is not None:
+                    result = value
+            return result
+
+        if isinstance(node, ExpressionStatement):
+            return self.evaluate(node.expression, environment)
+
+        if isinstance(node, Number):
+            return node.value
+
+        if isinstance(node, String):
+            return node.value
+
+        if isinstance(node, Boolean):
+            return node.value
+
+        if isinstance(node, Array):
+            return [self.evaluate(element, environment) for element in node.elements]
+
+        if isinstance(node, Map):
+            return {
+                self.evaluate(key, environment): self.evaluate(value, environment)
+                for key, value in node.entries
+            }
+
+        if isinstance(node, Variable):
+            return environment.get(node.name)
+
+        if isinstance(node, Let):
+            value = self.evaluate(node.value, environment)
+            environment.define(node.name, value)
+            return None
+
+        if isinstance(node, Assign):
+            value = self.evaluate(node.value, environment)
+
+            if isinstance(node.target, Variable):
+                return environment.assign(node.target.name, value)
+
+            if isinstance(node.target, Index):
+                target = self.evaluate(node.target.target, environment)
+                index = self.evaluate(node.target.index, environment)
+
+                try:
+                    target[index] = value
+                    return value
+                except (TypeError, IndexError, KeyError) as error:
+                    raise CakeRuntimeError(f"Invalid indexed assignment: {error}")
+
+        if isinstance(node, Unary):
+            value = self.evaluate(node.expression, environment)
+
+            if node.operator == "MINUS":
+                if not isinstance(value, (int, float)) or isinstance(value, bool):
+                    raise CakeRuntimeError("Unary - expects a number")
+                return -value
+
+            if node.operator == "NOT":
+                return not self.is_truthy(value)
+
+        if isinstance(node, Binary):
+            if node.operator == "AND":
+                left = self.evaluate(node.left, environment)
+                if not self.is_truthy(left):
+                    return left
+                return self.evaluate(node.right, environment)
+
+            if node.operator == "OR":
+                left = self.evaluate(node.left, environment)
+                if self.is_truthy(left):
+                    return left
+                return self.evaluate(node.right, environment)
+
+            left = self.evaluate(node.left, environment)
+            right = self.evaluate(node.right, environment)
+
+            if node.operator == "PLUS":
+                if isinstance(left, str) and isinstance(right, str):
+                    return left + right
+                if (
+                    isinstance(left, (int, float))
+                    and not isinstance(left, bool)
+                    and isinstance(right, (int, float))
+                    and not isinstance(right, bool)
+                ):
+                    return left + right
+                if isinstance(left, list) and isinstance(right, list):
+                    return left + right
+                raise CakeRuntimeError("+ expects two numbers, two strings, or two arrays")
+
+            if node.operator == "MINUS":
+                return left - right
+
+            if node.operator == "STAR":
+                return left * right
+
+            if node.operator == "SLASH":
+                if right == 0:
+                    raise CakeRuntimeError("Division by zero")
+                return left / right
+
+            if node.operator == "PERCENT":
+                if right == 0:
+                    raise CakeRuntimeError("Modulo by zero")
+                return left % right
+
+            if node.operator == "EQ":
+                return left == right
+
+            if node.operator == "NE":
+                return left != right
+
+            if node.operator == "LT":
+                return left < right
+
+            if node.operator == "LE":
+                return left <= right
+
+            if node.operator == "GT":
+                return left > right
+
+            if node.operator == "GE":
+                return left >= right
+
+        if isinstance(node, If):
+            if self.is_truthy(self.evaluate(node.condition, environment)):
+                return self.evaluate(node.then_branch, Environment(environment))
+
+            if node.else_branch is not None:
+                return self.evaluate(node.else_branch, Environment(environment))
+
+            return None
+
+        if isinstance(node, While):
+            result = None
+
+            while self.is_truthy(self.evaluate(node.condition, environment)):
+                value = self.evaluate(node.body, Environment(environment))
+                if value is not None:
+                    result = value
+
+            return result
+
+        if isinstance(node, TryCatch):
+            try:
+                return self.evaluate(node.try_block, Environment(environment))
+            except CakeRuntimeError as error:
+                catch_environment = Environment(environment)
+                catch_environment.define(node.error_name, str(error))
+                return self.evaluate(node.catch_block, catch_environment)
+
+        if isinstance(node, Function):
+            function = CakeFunction(node, environment)
+            node.closure = environment
+
+            # Anonymous legacy functions execute immediately, preserving
+            # the original Cupcake behavior:
             #
-            # an anonymous function
+            # function (2 + 2);
             #
-            # or:
+            # returns 4.
+            if node.name is None and node.legacy_expression:
+                return function.call(self, [])
+
+            # Anonymous modern functions are values and can be assigned:
             #
-            # a named function call.
-            if value is not None:
-                result = value
+            # let add = function(a, b) { return a + b; };
+            if node.name is None:
+                return function
 
-        return result
+            environment.define(node.name, function)
+            return None
 
+        if isinstance(node, Call):
+            callee = self.evaluate(node.callee, environment)
+            arguments = [
+                self.evaluate(argument, environment)
+                for argument in node.arguments
+            ]
 
-    # If we reach a node type we do not understand, raise an error.
-    raise RuntimeError(
-        f"Cannot evaluate node: {type(node).__name__}"
-    )
+            if not isinstance(callee, (CakeFunction, BuiltinFunction)):
+                raise CakeRuntimeError("Attempted to call a value that is not a function")
+
+            return callee.call(self, arguments)
+
+        if isinstance(node, Return):
+            value = None
+            if node.value is not None:
+                value = self.evaluate(node.value, environment)
+            raise ReturnSignal(value)
+
+        if isinstance(node, Index):
+            target = self.evaluate(node.target, environment)
+            index = self.evaluate(node.index, environment)
+
+            if isinstance(target, (list, str)):
+                if not isinstance(index, int):
+                    raise CakeRuntimeError("Array/string index must be an integer")
+                try:
+                    return target[index]
+                except IndexError:
+                    raise CakeRuntimeError("Index is out of range")
+
+            if isinstance(target, dict):
+                if index not in target:
+                    raise CakeRuntimeError(f"Map key {index!r} does not exist")
+                return target[index]
+
+            raise CakeRuntimeError("Only arrays, strings, and maps can be indexed")
+
+        raise CakeRuntimeError(
+            f"Cannot evaluate node: {type(node).__name__}"
+        )
 
 
 # -------------------------
-# TEST THE TOKENIZER
+# RUN SOURCE CODE
 # -------------------------
-
-# Call the tokenizer with example source code.
-# The string below represents a small program written using the language.
-# Pass in the source code into the tokenize function to test the tokenizer is working.
-# It is a simple function: function (2 + 2);
-##tokens = tokenize("function (2 + 2);")
-
-# Print the list of tokens so the result can be inspected.
-##print(tokens)
-
-
-# Call the tokenizer with example source code.
-source = "function (2 + 2);"
-
-tokens = tokenize(source)
-
-# Print the list of tokens so the result can be inspected.
-# print(tokens)
-
-
-# Output:
-# [('FUNCTION', 'function'), ('LPAREN', '('), ('NUMBER', '2'), ('PLUS', '+'), ('NUMBER', '2'), ('RPAREN', ')'), ('SEMICOLON', ';'), ('EOF', None)]
-
-
-# -------------------------
-# USING THE PARSER
-# -------------------------
-
-
-# Example source code written using the language
-source = "function (2 + 2);"
-
-
-# 1. Send the source code through the tokenizer.
-tokens = tokenize(source)
-
-# Give the tokens to the Parser.
-parser = Parser(tokens)
-
-# Ask the parser to build the AST.
-tree = parser.parse()
-
-
-# At this point, tree conceptually looks like:
-#
-# Function
-# └── Binary
-#     ├── Number(2)
-#     ├── PLUS
-#     └── Number(2)
-#
-# It has understood the STRUCTURE of your program,
-# but it has not yet calculated 2 + 2.
-
-
-# The tokenizer creates the tokens, and the parser is already consuming those tokens and building an AST.
-
 
 def run(source):
-
-    # Clear any functions left over from a previous run.
-    functions.clear()
-
     tokens = tokenize(source)
-
     parser = Parser(tokens)
-
     tree = parser.parse()
-
-    return evaluate(tree)
-
-
-# -------------------------
-# TEST
-# -------------------------
-
-# print(run("function (2 + 2);"))
-# print(run("function (10 - 3);"))
-# print(run("function (4 * 5);"))
-# print(run("function (20 / 4);"))
+    interpreter = Interpreter()
+    return interpreter.evaluate(tree)
 
 
 # -------------------------
@@ -705,38 +1046,34 @@ def run(source):
 # Run an external source file with the file extension of: .cake
 # -------------------------
 
+def main():
+    if len(sys.argv) != 2:
+        print("Usage: python3 cupcake.py <file.cake>")
+        sys.exit(1)
 
-# Make sure the user provided the filename.
-if len(sys.argv) != 2:
+    filename = sys.argv[1]
 
-    print("Usage: python3 cupcake.py <file.cake>")
+    if not filename.endswith(".cake"):
+        print("Error: Cupcake source files must use the .cake extension.")
+        sys.exit(1)
 
-    sys.exit(1)
+    try:
+        with open(filename, "r", encoding="utf-8") as file:
+            source = file.read()
 
+        result = run(source)
 
-# Get the filename from the command line.
-filename = sys.argv[1]
+        if result is not None:
+            print(Interpreter().stringify(result))
 
+    except (SyntaxError, CakeRuntimeError) as error:
+        print(f"Cupcake error: {error}")
+        sys.exit(1)
 
-# Make sure the file uses the .cake extension.
-if not filename.endswith(".cake"):
-
-    print("Error: Cupcake source files must use the .cake extension.")
-
-    sys.exit(1)
-
-
-# Open the .cake file and read all of its source code.
-with open(filename, "r") as file:
-
-    source = file.read()
-
-
-# Send the source code through the interpreter.
-result = run(source)
+    except OSError as error:
+        print(f"Cupcake file error: {error}")
+        sys.exit(1)
 
 
-# Print the result.
-if result is not None:
-
-    print(result)
+if __name__ == "__main__":
+    main()
