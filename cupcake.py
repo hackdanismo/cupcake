@@ -283,6 +283,7 @@ class Parser:
 
 # -------------------------
 # EVALUATOR
+# An evaluator is the part of your interpreter that takes the parsed syntax tree and actually performs the computation.
 # -------------------------
 
 def evaluate(node):
