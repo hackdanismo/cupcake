@@ -282,6 +282,42 @@ class Parser:
         return Number(int(value))
 
 # -------------------------
+# EVALUATOR
+# -------------------------
+
+def evaluate(node):
+    # If the node is a Number, return the actual numerical value.
+    if isinstance(node, Number):
+        return node.value
+
+    # If the node is a Binary expression, evaluate the left and right sides.
+    if isinstance(node, Binary):
+        left = evaluate(node.left)
+        right = evaluate(node.right)
+
+        # Perform the correct operation.
+        if node.operator == "PLUS":
+            return left + right
+
+        if node.operator == "MINUS":
+            return left - right
+
+        if node.operator == "STAR":
+            return left * right
+
+        if node.operator == "SLASH":
+            return left / right
+
+    # If the node is a Function, evaluate the function body
+    if isinstance(node, Function):
+        return evaluate(node.body)
+
+    # If we reach a node type we do not understand, raise an error.
+    raise RuntimeError(
+        f"Cannot evaluate node: {type(node).__name__}"
+    )
+
+# -------------------------
 # TEST THE TOKENIZER
 # -------------------------
 
@@ -329,3 +365,18 @@ tree = parser.parse()
 # but it has not yet calculated 2 + 2.
 
 # The tokenizer creates the tokens, and the parser is already consuming those tokens and building an AST.
+
+def run(source):
+    tokens = tokenize(source)
+    parser = Parser(tokens)
+    tree = parser.parse()
+    return evaluate(tree)
+
+# -------------------------
+# TEST
+# -------------------------
+
+print(run("function (2 + 2);"))
+print(run("function (10 - 3);"))
+print(run("function (4 * 5);"))
+print(run("function (20 / 4);"))
