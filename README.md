@@ -115,3 +115,6 @@ Function
 That tree is much easier for the `evaluator` to understand than a flat list of tokens.
 
 In the `parser`, `parse()` starts the process, `parse_function()` recognizes the shape of a function, and `parse_expression()` recognizes simple arithmetic expressions. The `tokenizer` identifies the pieces, the `parser` turns them into a structured tree, and the `evaluator` can then walk that tree and return the result of the code.
+
+## Evaluator
+An `evaluator` is the part of your interpreter that takes the `parsed` syntax tree and actually performs the computation.

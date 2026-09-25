@@ -1,5 +1,6 @@
 # Impprt the regular expression module from Python.
 import re
+import sys
 
 TOKEN_REGEX = re.compile(
     r"""
@@ -282,6 +283,43 @@ class Parser:
         return Number(int(value))
 
 # -------------------------
+# EVALUATOR
+# An evaluator is the part of your interpreter that takes the parsed syntax tree and actually performs the computation.
+# -------------------------
+
+def evaluate(node):
+    # If the node is a Number, return the actual numerical value.
+    if isinstance(node, Number):
+        return node.value
+
+    # If the node is a Binary expression, evaluate the left and right sides.
+    if isinstance(node, Binary):
+        left = evaluate(node.left)
+        right = evaluate(node.right)
+
+        # Perform the correct operation.
+        if node.operator == "PLUS":
+            return left + right
+
+        if node.operator == "MINUS":
+            return left - right
+
+        if node.operator == "STAR":
+            return left * right
+
+        if node.operator == "SLASH":
+            return left / right
+
+    # If the node is a Function, evaluate the function body
+    if isinstance(node, Function):
+        return evaluate(node.body)
+
+    # If we reach a node type we do not understand, raise an error.
+    raise RuntimeError(
+        f"Cannot evaluate node: {type(node).__name__}"
+    )
+
+# -------------------------
 # TEST THE TOKENIZER
 # -------------------------
 
@@ -329,3 +367,46 @@ tree = parser.parse()
 # but it has not yet calculated 2 + 2.
 
 # The tokenizer creates the tokens, and the parser is already consuming those tokens and building an AST.
+
+def run(source):
+    tokens = tokenize(source)
+    parser = Parser(tokens)
+    tree = parser.parse()
+    return evaluate(tree)
+
+# -------------------------
+# TEST
+# -------------------------
+
+print(run("function (2 + 2);"))
+print(run("function (10 - 3);"))
+print(run("function (4 * 5);"))
+print(run("function (20 / 4);"))
+
+# -------------------------
+# RUN EXTERNAL SOURCE FILES 
+# Run an external source file with the file extension of: .cake
+# -------------------------
+
+# Make sure the user provided the filename.
+if len(sys.argv) != 2:
+    print("Usage: python3 cupcake.py <file.cake>")
+    sys.exit(1)
+
+# Get the filename from the command line.
+filename = sys.argv[1]
+
+# Make sure the file uses the .cake extension.
+if not filename.endswith(".cake"):
+    print("Error: Cupcake source files must use the .cake extension.")
+    sys.exit(1)
+
+# Open the .cake file and read all of its source code.
+with open(filename, "r") as file:
+    source = file.read()
+
+# Send the source code through the interpreter.
+result = run(source)
+
+# Print the result.
+print(result)
